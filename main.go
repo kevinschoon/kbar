@@ -183,6 +183,8 @@ func initModules() []bar.Module {
 		sysinfo.New().Output(loadFunc),
 		funcs.Every(10*time.Second, checkInterface("wlan0")),
 		funcs.Every(10*time.Second, checkInterface("wg0")),
+		funcs.Every(5*time.Second, checkSystemdState(false)),
+		funcs.Every(5*time.Second, checkSystemdState(true)),
 	}
 }
 

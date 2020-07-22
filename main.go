@@ -2,10 +2,15 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
-	"io/ioutil"
+	"log"
+	"math"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/exec"
+	"os/signal"
 	"runtime"
 	"strings"
 	"time"
@@ -16,53 +21,52 @@ import (
 	"barista.run/modules/battery"
 	"barista.run/modules/clock"
 	"barista.run/modules/funcs"
+	"barista.run/modules/netspeed"
 	"barista.run/modules/sysinfo"
 	"barista.run/outputs"
 	"barista.run/pango"
+
+	"github.com/kevinschoon/kbar/systemd"
 )
 
 const (
-	dot  = `●`
-	up   = `⬆️`
-	down = `⬇️`
+	dot = `●`
 )
 
 var (
 	yellow = colors.Hex("#e4dd85")
 	green  = colors.Hex("#66a461")
 	red    = colors.Hex("#a46163")
+	white  = colors.Hex("#ffffff")
+
+	pctHigh = NewColorizer(
+		green,
+		Float(func(v float64) bool { return v >= 25 }, green),
+		Float(func(v float64) bool { return v >= 50 }, yellow),
+		Float(func(v float64) bool { return v >= 75 }, red),
+	)
+
+	pctLow = NewColorizer(
+		green,
+		Float(func(v float64) bool { return 75 >= v }, green),
+		Float(func(v float64) bool { return 50 >= v }, yellow),
+		Float(func(v float64) bool { return 25 >= v }, red),
+	)
+
+	// network speed (kb)
+	speedChk = NewColorizer(
+		green,
+		Float(func(v float64) bool { return v >= 10 }, green),
+		Float(func(v float64) bool { return v >= 75 }, yellow),
+		Float(func(v float64) bool { return v >= 120 }, red),
+	)
+
+	systemChk = NewColorizer(
+		red,
+		String(func(v string) bool { return strings.Contains(v, "running") }, green),
+		String(func(v string) bool { return strings.Contains(v, "degraded") }, red),
+	)
 )
-
-func CheckWireguard(iface string) funcs.Func {
-	return func(sink bar.Sink) {
-		if _, err := os.Stat(fmt.Sprintf("/sys/class/net/%s/carrier", iface)); err != nil {
-			sink.Output(
-				pango.New(
-					pango.Text(iface),
-					pango.Text(down).Color(red)),
-			)
-			return
-		}
-		sink.Output(
-			pango.New(pango.Text(iface),
-				pango.Text(up).Color(green)),
-		)
-	}
-}
-
-func CheckInterface(iface string) funcs.Func {
-	return func(sink bar.Sink) {
-		raw, err := ioutil.ReadFile(fmt.Sprintf("/sys/class/net/%s/operstate", iface))
-		if sink.Error(err) {
-			return
-		}
-		if strings.Contains(string(raw), "up") {
-			sink.Output(pango.New(pango.Text(iface).Color(green)))
-		} else {
-			sink.Output(pango.New(pango.Text(iface).Color(red)))
-		}
-	}
-}
 
 func WorldClock() funcs.Func {
 	return func(sink bar.Sink) {
@@ -80,66 +84,92 @@ func WorldClock() funcs.Func {
 	}
 }
 
-func batteryFunc(info battery.Info) bar.Output {
-	remaining := info.RemainingPct()
-	var color colors.ColorfulColor
-	switch {
-	case remaining >= 75:
-	case remaining >= 25:
-		color = yellow
-	default:
-		color = red
-	}
-	return outputs.Pango(
-		pango.New(
-			pango.Text(fmt.Sprintf("B:%d", remaining)),
-		).Color(color))
-}
-
-func clockFunc(now time.Time) bar.Output {
-	return bar.TextSegment(now.Format("(Mon)01-02|15:04:05|MST"))
-}
-
-func loadToColor(value float64, nCpus uint16) colors.ColorfulColor {
-	load := (value / float64(runtime.NumCPU())) * 100
-	switch {
-	case load > 50:
-		return red
-	case load > 25:
-		return yellow
-	default:
-		return green
-	}
-}
-
-func loadFunc(info sysinfo.Info) bar.Output {
-	return pango.New(
-		pango.Text("L:"),
-		pango.Textf("%.2f|", info.Loads[0]).Color(loadToColor(info.Loads[0], info.Procs)),
-		pango.Textf("%.2f|", info.Loads[1]).Color(loadToColor(info.Loads[1], info.Procs)),
-		pango.Textf("%.2f", info.Loads[2]).Color(loadToColor(info.Loads[2], info.Procs)),
-	)
-}
-
 func initModules() []bar.Module {
 	return []bar.Module{
 		SwayWindow{},
-		clock.Local().Output(1*time.Second, clockFunc),
-		battery.Named("BAT0").Output(batteryFunc),
-		sysinfo.New().Output(loadFunc),
-		funcs.Every(10*time.Second, CheckInterface("wlan0")),
-		funcs.Every(10*time.Second, CheckWireguard("wg0")),
-		SystemdMonitor{true},
-		SystemdMonitor{},
+		clock.Local().Output(1*time.Second, func(now time.Time) bar.Output {
+			return bar.TextSegment(now.Format("(Mon)01-02|15:04:05|MST"))
+		}),
+		battery.All().Output(func(info battery.Info) bar.Output {
+			remaining := info.RemainingPct()
+			return outputs.Pango(
+				pango.New(
+					pango.Text("B:["),
+					pango.Textf("%d", remaining).Color(pctLow.Int(remaining)),
+					pango.Text("]"),
+				))
+		}),
+		sysinfo.New().Output(func(info sysinfo.Info) bar.Output {
+			memFree := (info.FreeRAM.Bytes() / info.TotalRAM.Bytes()) * 100
+			return pango.New(
+				pango.Text("L:["),
+				pango.Textf(
+					"%.2f", info.Loads[0]).
+					Color(pctHigh.Float64((info.Loads[0] / float64(runtime.NumCPU()) * 100))),
+				pango.Text("|"),
+				pango.Textf(
+					"%.2f", info.Loads[1]).
+					Color(pctHigh.Float64((info.Loads[1] / float64(runtime.NumCPU()) * 100))),
+				pango.Text("|"),
+				pango.Textf(
+					"%.2f", info.Loads[2]).
+					Color(pctHigh.Float64((info.Loads[2] / float64(runtime.NumCPU()) * 100))),
+				pango.Text("] M:["),
+				pango.Textf(
+					"%.1f", memFree).Color(pctHigh.Float64((info.FreeRAM.Bytes()/info.TotalRAM.Bytes())*100)),
+				pango.Text("]"),
+			)
+		}),
+		netspeed.New("wlan0").Output(func(speeds netspeed.Speeds) bar.Output {
+			if !speeds.Connected() {
+				return pango.New(
+					pango.Text("W:?").Color(red),
+				)
+			}
+			tx := math.Round(speeds.Tx.BytesPerSecond() / 1000)
+			rx := speeds.Rx.BytesPerSecond() / 1000
+			return pango.New(
+				pango.Text("N:["),
+				pango.Textf("%.2f", tx).Color(speedChk.Float64(tx)),
+				pango.Text("|"),
+				pango.Textf("%.2f", rx).Color(speedChk.Float64(rx)),
+				pango.Text("]"),
+			)
+		}),
+		systemd.New(5 * time.Second).Output(func(state systemd.SystemdState) bar.Output {
+			user, system := pango.Text(dot), pango.Text(dot)
+			return pango.New(
+				pango.Text("S:["),
+				user.Color(systemChk.String(state.UserState)),
+				pango.Text("|"),
+				system.Color(systemChk.String(state.SystemState)),
+				pango.Text("]"),
+			)
+		}),
 	}
 }
 
 func main() {
+	var (
+		profile = flag.Bool("profile", false, "generate a pprof file")
+	)
+	flag.Parse()
+	if *profile {
+		go func() {
+			log.Println(http.ListenAndServe("localhost:6060", nil))
+		}()
+	}
+	sigCh := make(chan os.Signal)
+	signal.Notify(sigCh, os.Interrupt)
 	barista.SetErrorHandler(func(err bar.ErrorEvent) {
 		exec.Command("swaynag", "-m", err.Error.Error()).Run()
 	})
-	err := barista.Run(initModules()...)
-	if err != nil {
-		panic(err)
-	}
+	go func() {
+		err := barista.Run(initModules()...)
+		if err != nil {
+			panic(err)
+		}
+	}()
+	sig := <-sigCh
+	fmt.Printf("caught signal (%s)\n", sig)
 }

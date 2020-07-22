@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"log"
@@ -66,30 +65,50 @@ var (
 		String(func(v string) bool { return strings.Contains(v, "running") }, green),
 		String(func(v string) bool { return strings.Contains(v, "degraded") }, red),
 	)
+
+	clocks = NewColorizer(
+		colors.Hex("#5c5c5c"), // night
+		Float(func(v float64) bool { return (v >= 6 && v <= 8) }, colors.Hex("#ffc37a")),   // dawn
+		Float(func(v float64) bool { return (v > 8 && v < 18) }, colors.Hex("#fff300")),    // daytime
+		Float(func(v float64) bool { return (v >= 18 && v <= 20) }, colors.Hex("#c7512b")), // dusk
+	)
 )
 
 func WorldClock() funcs.Func {
 	return func(sink bar.Sink) {
 		now := time.Now()
-		buf := bytes.NewBuffer(nil)
-		// San Francisco
-		fmt.Fprintf(buf, "SF:%s", now.UTC().Add(-(7 * time.Hour)).Format("15"))
-		// New York
-		fmt.Fprintf(buf, "|NY:%s", now.UTC().Add(-(4 * time.Hour)).Format("15"))
-		// London
-		fmt.Fprintf(buf, "|LN:%s", now.UTC().Format("15"))
-		// Beijing
-		fmt.Fprintf(buf, "|BG:%s", now.UTC().Add((7 * time.Hour)).Format("15"))
-		sink.Output(bar.TextSegment(buf.String()))
+		sf := now.UTC().Add(-(7 * time.Hour))
+		ny := now.UTC().Add(-(4 * time.Hour))
+		ln := now.UTC()
+		hk := now.UTC().Add((8 * time.Hour))
+		sink.Output(pango.New(
+			pango.Text("W:["),
+			pango.Text("SF:"),
+			pango.Textf("%02d", sf.Hour()).Color(clocks.Int(sf.Hour())),
+			pango.Text("|"),
+			pango.Text("NY:"),
+			pango.Textf("%02d", ny.Hour()).Color(clocks.Int(ny.Hour())),
+			pango.Text("|"),
+			pango.Text("LN:"),
+			pango.Textf("%02d", ln.Hour()).Color(clocks.Int(ln.Hour())),
+			pango.Text("|"),
+			pango.Text("HK:"),
+			pango.Textf("%02d", hk.Hour()).Color(clocks.Int(hk.Hour())),
+			pango.Text("]"),
+		))
 	}
 }
 
 func initModules() []bar.Module {
 	return []bar.Module{
-		SwayWindow{},
 		clock.Local().Output(1*time.Second, func(now time.Time) bar.Output {
-			return bar.TextSegment(now.Format("(Mon)01-02|15:04:05|MST"))
+			return pango.New(
+				pango.Text("T:["),
+				pango.Text(now.Format("15:04:05")).Color(clocks.Int(now.Hour())),
+				pango.Text("]"),
+			)
 		}),
+		funcs.Every(1*time.Minute, WorldClock()),
 		battery.All().Output(func(info battery.Info) bar.Output {
 			remaining := info.RemainingPct()
 			return outputs.Pango(

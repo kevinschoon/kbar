@@ -37,6 +37,7 @@ var (
 	green  = colors.Hex("#66a461")
 	red    = colors.Hex("#a46163")
 	white  = colors.Hex("#ffffff")
+	gray   = colors.Hex("#b5b5b5")
 
 	pctHigh = NewColorizer(
 		green,
@@ -69,7 +70,7 @@ var (
 	clocks = NewColorizer(
 		colors.Hex("#5c5c5c"), // night
 		Float(func(v float64) bool { return (v >= 6 && v <= 8) }, colors.Hex("#ffc37a")),   // dawn
-		Float(func(v float64) bool { return (v > 8 && v < 18) }, colors.Hex("#fff300")),    // daytime
+		Float(func(v float64) bool { return (v > 8 && v < 18) }, colors.Hex("#d6c050")),    // daytime
 		Float(func(v float64) bool { return (v >= 18 && v <= 20) }, colors.Hex("#c7512b")), // dusk
 	)
 )
@@ -85,13 +86,13 @@ func WorldClock() funcs.Func {
 			pango.Text("W:["),
 			pango.Text("SF:"),
 			pango.Textf("%02d", sf.Hour()).Color(clocks.Int(sf.Hour())),
-			pango.Text("|"),
+			pango.Text("|").Color(gray),
 			pango.Text("NY:"),
 			pango.Textf("%02d", ny.Hour()).Color(clocks.Int(ny.Hour())),
-			pango.Text("|"),
+			pango.Text("|").Color(gray),
 			pango.Text("LN:"),
 			pango.Textf("%02d", ln.Hour()).Color(clocks.Int(ln.Hour())),
-			pango.Text("|"),
+			pango.Text("|").Color(gray),
 			pango.Text("HK:"),
 			pango.Textf("%02d", hk.Hour()).Color(clocks.Int(hk.Hour())),
 			pango.Text("]"),
@@ -125,11 +126,11 @@ func initModules() []bar.Module {
 				pango.Textf(
 					"%.2f", info.Loads[0]).
 					Color(pctHigh.Float64((info.Loads[0] / float64(runtime.NumCPU()) * 100))),
-				pango.Text("|"),
+				pango.Text("|").Color(gray),
 				pango.Textf(
 					"%.2f", info.Loads[1]).
 					Color(pctHigh.Float64((info.Loads[1] / float64(runtime.NumCPU()) * 100))),
-				pango.Text("|"),
+				pango.Text("|").Color(gray),
 				pango.Textf(
 					"%.2f", info.Loads[2]).
 					Color(pctHigh.Float64((info.Loads[2] / float64(runtime.NumCPU()) * 100))),
@@ -150,7 +151,7 @@ func initModules() []bar.Module {
 			return pango.New(
 				pango.Text("N:["),
 				pango.Textf("%.2f", tx).Color(speedChk.Float64(tx)),
-				pango.Text("|"),
+				pango.Text("|").Color(gray),
 				pango.Textf("%.2f", rx).Color(speedChk.Float64(rx)),
 				pango.Text("]"),
 			)
@@ -160,7 +161,7 @@ func initModules() []bar.Module {
 			return pango.New(
 				pango.Text("S:["),
 				user.Color(systemChk.String(state.UserState)),
-				pango.Text("|"),
+				pango.Text("|").Color(gray),
 				system.Color(systemChk.String(state.SystemState)),
 				pango.Text("]"),
 			)

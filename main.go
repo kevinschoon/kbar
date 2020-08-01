@@ -22,6 +22,8 @@ import (
 	"barista.run/modules/funcs"
 	"barista.run/modules/netspeed"
 	"barista.run/modules/sysinfo"
+	"barista.run/modules/volume"
+	"barista.run/modules/volume/pulseaudio"
 	"barista.run/outputs"
 	"barista.run/pango"
 
@@ -29,7 +31,10 @@ import (
 )
 
 const (
-	dot = `●`
+	dot       = `●`
+	up        = `↑`
+	down      = `↓`
+	connected = `⌁`
 )
 
 var (
@@ -51,6 +56,11 @@ var (
 		Float(func(v float64) bool { return 75 >= v }, green),
 		Float(func(v float64) bool { return 50 >= v }, yellow),
 		Float(func(v float64) bool { return 25 >= v }, red),
+	)
+
+	vol = NewColorizer(
+		gray,
+		Float(func(v float64) bool { return v >= 50 }, green),
 	)
 
 	// network speed (kb)
@@ -106,15 +116,31 @@ func initModules() []bar.Module {
 			return pango.New(
 				pango.Text("T:["),
 				pango.Text(now.Format("15:04:05")).Color(clocks.Int(now.Hour())),
+				pango.Text("|").Color(gray),
+				pango.Text(now.Format("Mon Jan 2")).Color(clocks.Int(now.Hour())),
 				pango.Text("]"),
 			)
 		}),
 		funcs.Every(1*time.Minute, WorldClock()),
+		volume.New(pulseaudio.DefaultSink()).Output(func(info volume.Volume) bar.Output {
+			return pango.New(
+				pango.Text("B:["),
+				pango.Textf("%d", info.Pct()),
+				pango.Text("]"),
+			)
+		}),
 		battery.All().Output(func(info battery.Info) bar.Output {
+			var symbol *pango.Node
+			if info.Discharging() {
+				symbol = pango.New(pango.Text(down))
+			} else {
+				symbol = pango.New(pango.Text(connected))
+			}
 			remaining := info.RemainingPct()
 			return outputs.Pango(
 				pango.New(
 					pango.Text("B:["),
+					symbol,
 					pango.Textf("%d", remaining).Color(pctLow.Int(remaining)),
 					pango.Text("]"),
 				))
@@ -149,15 +175,20 @@ func initModules() []bar.Module {
 			tx := math.Round(speeds.Tx.BytesPerSecond() / 1000)
 			rx := speeds.Rx.BytesPerSecond() / 1000
 			return pango.New(
-				pango.Text("N:["),
+				pango.Text("N:["+up),
 				pango.Textf("%.2f", tx).Color(speedChk.Float64(tx)),
 				pango.Text("|").Color(gray),
+				pango.Text(down),
 				pango.Textf("%.2f", rx).Color(speedChk.Float64(rx)),
 				pango.Text("]"),
 			)
 		}),
 		systemd.New(5 * time.Second).Output(func(state systemd.SystemdState) bar.Output {
-			user, system := pango.Text(dot), pango.Text(dot)
+			user, system := pango.Text(
+				strings.ToUpper(string(state.UserState[1])),
+			).Bold(), pango.Text(
+				strings.ToUpper(string(state.SystemState[1])),
+			).Bold()
 			return pango.New(
 				pango.Text("S:["),
 				user.Color(systemChk.String(state.UserState)),
@@ -169,7 +200,7 @@ func initModules() []bar.Module {
 	}
 }
 
-func IsSway() bool {
+func isSway() bool {
 	return os.Getenv("SWAYSOCK") != ""
 }
 
@@ -185,7 +216,7 @@ func main() {
 	}
 	sigCh := make(chan os.Signal)
 	signal.Notify(sigCh, os.Interrupt)
-	if IsSway() {
+	if isSway() {
 		barista.SetErrorHandler(func(err bar.ErrorEvent) {
 			exec.Command("swaynag", "-m", err.Error.Error()).Run()
 		})

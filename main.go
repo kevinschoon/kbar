@@ -169,6 +169,10 @@ func initModules() []bar.Module {
 	}
 }
 
+func IsSway() bool {
+	return os.Getenv("SWAYSOCK") != ""
+}
+
 func main() {
 	var (
 		profile = flag.Bool("profile", false, "generate a pprof file")
@@ -181,9 +185,11 @@ func main() {
 	}
 	sigCh := make(chan os.Signal)
 	signal.Notify(sigCh, os.Interrupt)
-	barista.SetErrorHandler(func(err bar.ErrorEvent) {
-		exec.Command("swaynag", "-m", err.Error.Error()).Run()
-	})
+	if IsSway() {
+		barista.SetErrorHandler(func(err bar.ErrorEvent) {
+			exec.Command("swaynag", "-m", err.Error.Error()).Run()
+		})
+	}
 	go func() {
 		err := barista.Run(initModules()...)
 		if err != nil {

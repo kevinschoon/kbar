@@ -124,7 +124,7 @@ func initModules() []bar.Module {
 		funcs.Every(1*time.Minute, WorldClock()),
 		volume.New(pulseaudio.DefaultSink()).Output(func(info volume.Volume) bar.Output {
 			return pango.New(
-				pango.Text("B:["),
+				pango.Text("V:["),
 				pango.Textf("%d", info.Pct()),
 				pango.Text("]"),
 			)

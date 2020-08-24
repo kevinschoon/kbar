@@ -46,9 +46,9 @@ var (
 
 	pctHigh = NewColorizer(
 		green,
-		Float(func(v float64) bool { return v >= 25 }, green),
+		Float(func(v float64) bool { return v >= 75 }, green),
 		Float(func(v float64) bool { return v >= 50 }, yellow),
-		Float(func(v float64) bool { return v >= 75 }, red),
+		Float(func(v float64) bool { return v >= 25 }, red),
 	)
 
 	pctLow = NewColorizer(

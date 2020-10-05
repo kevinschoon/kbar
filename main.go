@@ -20,6 +20,7 @@ import (
 	"barista.run/modules/battery"
 	"barista.run/modules/clock"
 	"barista.run/modules/funcs"
+	"barista.run/modules/meminfo"
 	"barista.run/modules/netspeed"
 	"barista.run/modules/sysinfo"
 	"barista.run/modules/volume"
@@ -35,6 +36,7 @@ const (
 	up        = `↑`
 	down      = `↓`
 	connected = `⌁`
+	moon      = "🌙"
 )
 
 var (
@@ -43,45 +45,38 @@ var (
 	red    = colors.Hex("#a46163")
 	white  = colors.Hex("#ffffff")
 	gray   = colors.Hex("#b5b5b5")
+	black  = colors.Hex("#000000")
 
 	pctHigh = NewColorizer(
-		green,
-		Float(func(v float64) bool { return v >= 75 }, green),
-		Float(func(v float64) bool { return v >= 50 }, yellow),
+		black,
+		Float(func(v float64) bool { return v >= 75 }, black),
 		Float(func(v float64) bool { return v >= 25 }, red),
 	)
 
 	pctLow = NewColorizer(
-		green,
-		Float(func(v float64) bool { return 75 >= v }, green),
-		Float(func(v float64) bool { return 50 >= v }, yellow),
-		Float(func(v float64) bool { return 25 >= v }, red),
-	)
-
-	vol = NewColorizer(
-		gray,
-		Float(func(v float64) bool { return v >= 50 }, green),
+		black,
+		Float(func(v float64) bool { return 25 >= v }, black),
+		Float(func(v float64) bool { return 75 >= v }, red),
 	)
 
 	// network speed (kb)
 	speedChk = NewColorizer(
-		green,
-		Float(func(v float64) bool { return v >= 10 }, green),
-		Float(func(v float64) bool { return v >= 75 }, yellow),
-		Float(func(v float64) bool { return v >= 120 }, red),
+		black,
+		Float(func(v float64) bool { return v >= 10 }, black),
+		Float(func(v float64) bool { return v >= 100 }, red),
 	)
 
 	systemChk = NewColorizer(
 		red,
-		String(func(v string) bool { return strings.Contains(v, "running") }, green),
+		String(func(v string) bool { return strings.Contains(v, "running") }, black),
 		String(func(v string) bool { return strings.Contains(v, "degraded") }, red),
 	)
 
 	clocks = NewColorizer(
-		colors.Hex("#5c5c5c"), // night
-		Float(func(v float64) bool { return (v >= 6 && v <= 8) }, colors.Hex("#ffc37a")),   // dawn
-		Float(func(v float64) bool { return (v > 8 && v < 18) }, colors.Hex("#d6c050")),    // daytime
-		Float(func(v float64) bool { return (v >= 18 && v <= 20) }, colors.Hex("#c7512b")), // dusk
+		gray, // night
+		Float(func(v float64) bool { return (v >= 6 && v <= 8) }, gray),   // dawn
+		Float(func(v float64) bool { return (v > 8 && v < 18) }, black),   // daytime
+		Float(func(v float64) bool { return (v >= 18 && v <= 20) }, gray), // dusk
 	)
 )
 
@@ -115,9 +110,9 @@ func initModules() []bar.Module {
 		clock.Local().Output(1*time.Second, func(now time.Time) bar.Output {
 			return pango.New(
 				pango.Text("T:["),
-				pango.Text(now.Format("15:04:05")).Color(clocks.Int(now.Hour())),
+				pango.Text(now.Format("15:04:05")).Color(black),
 				pango.Text("|").Color(gray),
-				pango.Text(now.Format("Mon Jan 2")).Color(clocks.Int(now.Hour())),
+				pango.Text(now.Format("Mon Jan 2")).Color(black),
 				pango.Text("]"),
 			)
 		}),
@@ -141,12 +136,11 @@ func initModules() []bar.Module {
 				pango.New(
 					pango.Text("B:["),
 					symbol,
-					pango.Textf("%d", remaining).Color(pctLow.Int(remaining)),
+					pango.Textf("%d", remaining).Color(pctLow.Int(remaining)).Bold(),
 					pango.Text("]"),
 				))
 		}),
 		sysinfo.New().Output(func(info sysinfo.Info) bar.Output {
-			memFree := (info.FreeRAM.Bytes() / info.TotalRAM.Bytes()) * 100
 			return pango.New(
 				pango.Text("L:["),
 				pango.Textf(
@@ -160,10 +154,15 @@ func initModules() []bar.Module {
 				pango.Textf(
 					"%.2f", info.Loads[2]).
 					Color(pctHigh.Float64((info.Loads[2] / float64(runtime.NumCPU()) * 100))),
-				pango.Text("] M:["),
-				pango.Textf(
-					"%.1f", memFree).Color(pctHigh.Float64((info.FreeRAM.Bytes()/info.TotalRAM.Bytes())*100)),
 				pango.Text("]"),
+			)
+		}),
+		meminfo.New().Output(func(info meminfo.Info) bar.Output {
+			memUtilized := (info["MemTotal"].Gigabytes() - info.Available().Gigabytes())
+			return pango.New(
+				pango.Textf(
+					"M:[%.2f]", memUtilized,
+				),
 			)
 		}),
 		netspeed.New("wlan0").Output(func(speeds netspeed.Speeds) bar.Output {

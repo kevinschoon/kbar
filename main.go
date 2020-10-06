@@ -47,36 +47,33 @@ var (
 	gray   = colors.Hex("#b5b5b5")
 	black  = colors.Hex("#000000")
 
-	pctHigh = NewColorizer(
-		black,
-		Float(func(v float64) bool { return v >= 75 }, black),
-		Float(func(v float64) bool { return v >= 25 }, red),
+	pctHigh = NewStyleizer(
+		SetColor(black),
+		Float(func(v float64) bool { return v > 25 }, SetColor(red)),
 	)
 
-	pctLow = NewColorizer(
-		black,
-		Float(func(v float64) bool { return 25 >= v }, black),
-		Float(func(v float64) bool { return 75 >= v }, red),
+	pctLow = NewStyleizer(
+		SetColor(black),
+		Float(func(v float64) bool { return v < 25 }, SetColor(red)),
 	)
 
 	// network speed (kb)
-	speedChk = NewColorizer(
-		black,
-		Float(func(v float64) bool { return v >= 10 }, black),
-		Float(func(v float64) bool { return v >= 100 }, red),
+	speedChk = NewStyleizer(
+		SetColor(black),
+		Float(func(v float64) bool { return v > 100 }, SetColor(red)),
 	)
 
-	systemChk = NewColorizer(
-		red,
-		String(func(v string) bool { return strings.Contains(v, "running") }, black),
-		String(func(v string) bool { return strings.Contains(v, "degraded") }, red),
+	systemChk = NewStyleizer(
+		SetColor(red),
+		String(func(v string) bool { return strings.Contains(v, "running") }, SetColor(black)),
+		String(func(v string) bool { return strings.Contains(v, "degraded") }, SetColor(red)),
 	)
 
-	clocks = NewColorizer(
-		gray, // night
-		Float(func(v float64) bool { return (v >= 6 && v <= 8) }, gray),   // dawn
-		Float(func(v float64) bool { return (v > 8 && v < 18) }, black),   // daytime
-		Float(func(v float64) bool { return (v >= 18 && v <= 20) }, gray), // dusk
+	clocks = NewStyleizer(
+		SetColor(black), // night
+		Float(func(v float64) bool { return (v >= 6 && v <= 8) }, SetColor(black)),   // dawn
+		Float(func(v float64) bool { return (v > 8 && v < 18) }, SetColor(black)),    // daytime
+		Float(func(v float64) bool { return (v >= 18 && v <= 20) }, SetColor(black)), // dusk
 	)
 )
 
@@ -90,16 +87,16 @@ func WorldClock() funcs.Func {
 		sink.Output(pango.New(
 			pango.Text("W:["),
 			pango.Text("SF:"),
-			pango.Textf("%02d", sf.Hour()).Color(clocks.Int(sf.Hour())),
+			clocks.Int(sf.Hour())(pango.Textf("%02d", sf.Hour())),
 			pango.Text("|").Color(gray),
 			pango.Text("NY:"),
-			pango.Textf("%02d", ny.Hour()).Color(clocks.Int(ny.Hour())),
+			clocks.Int(ny.Hour())(pango.Textf("%02d", ny.Hour())),
 			pango.Text("|").Color(gray),
 			pango.Text("LN:"),
-			pango.Textf("%02d", ln.Hour()).Color(clocks.Int(ln.Hour())),
+			clocks.Int(ln.Hour())(pango.Textf("%02d", ln.Hour())),
 			pango.Text("|").Color(gray),
 			pango.Text("HK:"),
-			pango.Textf("%02d", hk.Hour()).Color(clocks.Int(hk.Hour())),
+			clocks.Int(hk.Hour())(pango.Textf("%02d", hk.Hour())),
 			pango.Text("]"),
 		))
 	}
@@ -136,24 +133,18 @@ func initModules() []bar.Module {
 				pango.New(
 					pango.Text("B:["),
 					symbol,
-					pango.Textf("%d", remaining).Color(pctLow.Int(remaining)).Bold(),
+					pctLow.Int(remaining)(pango.Textf("%d", remaining)),
 					pango.Text("]"),
 				))
 		}),
 		sysinfo.New().Output(func(info sysinfo.Info) bar.Output {
 			return pango.New(
 				pango.Text("L:["),
-				pango.Textf(
-					"%.2f", info.Loads[0]).
-					Color(pctHigh.Float64((info.Loads[0] / float64(runtime.NumCPU()) * 100))),
+				pctHigh.Float64((info.Loads[0] / float64(runtime.NumCPU()) * 100))(pango.Textf("%.2f", info.Loads[0])),
 				pango.Text("|").Color(gray),
-				pango.Textf(
-					"%.2f", info.Loads[1]).
-					Color(pctHigh.Float64((info.Loads[1] / float64(runtime.NumCPU()) * 100))),
+				pctHigh.Float64((info.Loads[1] / float64(runtime.NumCPU()) * 100))(pango.Textf("%.2f", info.Loads[1])),
 				pango.Text("|").Color(gray),
-				pango.Textf(
-					"%.2f", info.Loads[2]).
-					Color(pctHigh.Float64((info.Loads[2] / float64(runtime.NumCPU()) * 100))),
+				pctHigh.Float64((info.Loads[2] / float64(runtime.NumCPU()) * 100))(pango.Textf("%.2f", info.Loads[2])),
 				pango.Text("]"),
 			)
 		}),
@@ -175,24 +166,24 @@ func initModules() []bar.Module {
 			rx := speeds.Rx.BytesPerSecond() / 1000
 			return pango.New(
 				pango.Text("N:["+up),
-				pango.Textf("%.2f", tx).Color(speedChk.Float64(tx)),
+				speedChk.Float64(tx)(pango.Textf("%.2f", tx)),
 				pango.Text("|").Color(gray),
 				pango.Text(down),
-				pango.Textf("%.2f", rx).Color(speedChk.Float64(rx)),
+				speedChk.Float64(tx)(pango.Textf("%.2f", rx)),
 				pango.Text("]"),
 			)
 		}),
 		systemd.New(5 * time.Second).Output(func(state systemd.SystemdState) bar.Output {
 			user, system := pango.Text(
 				strings.ToUpper(string(state.UserState[1])),
-			).Bold(), pango.Text(
+			), pango.Text(
 				strings.ToUpper(string(state.SystemState[1])),
-			).Bold()
+			)
 			return pango.New(
 				pango.Text("S:["),
-				user.Color(systemChk.String(state.UserState)),
+				systemChk.String(state.UserState)(user),
 				pango.Text("|").Color(gray),
-				system.Color(systemChk.String(state.SystemState)),
+				systemChk.String(state.SystemState)(system),
 				pango.Text("]"),
 			)
 		}),

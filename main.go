@@ -40,6 +40,8 @@ const (
 )
 
 var (
+	hostname string
+
 	yellow = colors.Hex("#e4dd85")
 	green  = colors.Hex("#66a461")
 	red    = colors.Hex("#a46163")
@@ -75,6 +77,9 @@ var (
 		Float(func(v float64) bool { return (v > 8 && v < 18) }, SetColor(black)),    // daytime
 		Float(func(v float64) bool { return (v >= 18 && v <= 20) }, SetColor(black)), // dusk
 	)
+
+	// host specific modules
+	batteryStatus bar.Module
 )
 
 func WorldClock() funcs.Func {
@@ -102,6 +107,12 @@ func WorldClock() funcs.Func {
 	}
 }
 
+func Hostname() funcs.Func {
+	return func(sink bar.Sink) {
+		sink.Output(pango.New(pango.Textf("[%s]", hostname)))
+	}
+}
+
 func initModules() []bar.Module {
 	return []bar.Module{
 		clock.Local().Output(1*time.Second, func(now time.Time) bar.Output {
@@ -121,22 +132,7 @@ func initModules() []bar.Module {
 				pango.Text("]"),
 			)
 		}),
-		battery.All().Output(func(info battery.Info) bar.Output {
-			var symbol *pango.Node
-			if info.Discharging() {
-				symbol = pango.New(pango.Text(down))
-			} else {
-				symbol = pango.New(pango.Text(connected))
-			}
-			remaining := info.RemainingPct()
-			return outputs.Pango(
-				pango.New(
-					pango.Text("B:["),
-					symbol,
-					pctLow.Int(remaining)(pango.Textf("%d", remaining)),
-					pango.Text("]"),
-				))
-		}),
+		batteryStatus,
 		sysinfo.New().Output(func(info sysinfo.Info) bar.Output {
 			return pango.New(
 				pango.Text("L:["),
@@ -187,6 +183,7 @@ func initModules() []bar.Module {
 				pango.Text("]"),
 			)
 		}),
+		funcs.Every(1*time.Hour, Hostname()),
 	}
 }
 
@@ -219,4 +216,49 @@ func main() {
 	}()
 	sig := <-sigCh
 	fmt.Printf("caught signal (%s)\n", sig)
+}
+
+func init() {
+	name, err := os.Hostname()
+	if err != nil {
+		panic(err)
+	}
+	hostname = name
+  // TODO: for some reason pbp shows its battery percentage
+  // as capacity, should fix is upstream perhaps
+	if hostname == "pbp" {
+    batteryStatus = battery.Named("cw2015-battery").Output(func(info battery.Info) bar.Output {
+			var symbol *pango.Node
+			if info.Discharging() {
+				symbol = pango.New(pango.Text(down))
+			} else {
+				symbol = pango.New(pango.Text(connected))
+			}
+      remaining := info.Capacity
+			return outputs.Pango(
+				pango.New(
+					pango.Text("B:["),
+					symbol,
+					pctLow.Int(remaining)(pango.Textf("%d", remaining)),
+					pango.Text("]"),
+				))
+    })
+	} else {
+		batteryStatus = battery.All().Output(func(info battery.Info) bar.Output {
+			var symbol *pango.Node
+			if info.Discharging() {
+				symbol = pango.New(pango.Text(down))
+			} else {
+				symbol = pango.New(pango.Text(connected))
+			}
+			remaining := info.RemainingPct()
+			return outputs.Pango(
+				pango.New(
+					pango.Text("B:["),
+					symbol,
+					pctLow.Int(remaining)(pango.Textf("%d", remaining)),
+					pango.Text("]"),
+				))
+		})
+	}
 }

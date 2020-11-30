@@ -8,5 +8,3 @@ require (
 	github.com/dustin/go-humanize v1.0.0
 	github.com/martinlindhe/unit v0.0.0-20190604142932-3b6be53d49af
 )
-
-replace barista.run => ../../soumya92/barista
